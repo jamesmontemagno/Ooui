@@ -1,16 +1,16 @@
 ﻿using System;
-using Ooui;
+
 using Xamarin.Forms;
 
 namespace Samples
 {
-    public class ButtonXamlPageSample : ISample
+    public class XamlPreviewPageSample : ISample
     {
-        public string Title => "Xamarin.Forms Button XAML";
+        public string Title => "Xamarin.Forms XAML Editor";
 
         public Ooui.Element CreateElement ()
         {
-            var page = new ButtonXaml.ButtonXamlPage ();
+            var page = new XamlPreviewPage ();
             return page.GetOouiElement ();
         }
     }

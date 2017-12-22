@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Ooui.Forms.Renderers;
 using Xamarin.Forms;
 using Xamarin.Forms.Internals;
+using System.Web;
 
 namespace Ooui.Forms
 {
@@ -31,6 +32,20 @@ namespace Ooui.Forms
         public Platform ()
         {
             _renderer = new PlatformRenderer (this);
+
+            _renderer.Style.PropertyChanged += HandleRendererStyle_PropertyChanged;
+
+            MessagingCenter.Subscribe (this, Page.AlertSignalName, (Page sender, AlertArguments arguments) => {
+                var alert = new DisplayAlert (arguments);
+                alert.Clicked += CloseAlert;
+
+                _renderer.AppendChild (alert.Element);
+
+                void CloseAlert (object s, EventArgs e)
+                {
+                    _renderer.RemoveChild (alert.Element);
+                }
+            });
         }
 
         void IDisposable.Dispose ()
@@ -42,6 +57,10 @@ namespace Ooui.Forms
             MessagingCenter.Unsubscribe<Page, ActionSheetArguments> (this, Page.ActionSheetSignalName);
             MessagingCenter.Unsubscribe<Page, AlertArguments> (this, Page.AlertSignalName);
             MessagingCenter.Unsubscribe<Page, bool> (this, Page.BusySetSignalName);
+
+            DisposeModelAndChildrenRenderers (Page);
+            //foreach (var modal in _modals)
+                //DisposeModelAndChildrenRenderers (modal);
         }
 
         public static IVisualElementRenderer CreateRenderer (VisualElement element)
@@ -95,7 +114,29 @@ namespace Ooui.Forms
 
         void HandleChildRemoved (object sender, ElementEventArgs e)
         {
-            throw new NotImplementedException ();
+            var view = e.Element;
+            DisposeModelAndChildrenRenderers (view);
+        }
+
+        void DisposeModelAndChildrenRenderers (Xamarin.Forms.Element view)
+        {
+            IVisualElementRenderer renderer;
+            foreach (VisualElement child in view.Descendants ()) {
+                renderer = GetRenderer (child);
+                child.ClearValue (RendererProperty);
+
+                if (renderer != null) {
+                    //renderer.NativeView.RemoveFromSuperview ();
+                    renderer.Dispose ();
+                }
+            }
+
+            renderer = GetRenderer ((VisualElement)view);
+            if (renderer != null) {
+                //renderer.NativeView.RemoveFromSuperview ();
+                renderer.Dispose ();
+            }
+            view.ClearValue (RendererProperty);
         }
 
         void AddChild (VisualElement view)
@@ -112,6 +153,12 @@ namespace Ooui.Forms
             }
             else
                 Console.Error.WriteLine ("Potential view double add");
+        }
+
+        void HandleRendererStyle_PropertyChanged (object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            var pageRenderer = GetRenderer (Page);
+            pageRenderer?.SetElementSize (Ooui.Forms.Extensions.ElementExtensions.GetSizeRequest (_renderer, double.PositiveInfinity, double.PositiveInfinity).Request);
         }
 
         void INavigation.InsertPageBefore (Page page, Page before)

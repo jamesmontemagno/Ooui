@@ -18,6 +18,7 @@ const mouseEvents = {
     wheel: true,
 };
 
+// Try to close the socket gracefully
 window.onbeforeunload = function() {
     if (socket != null) {
         socket.close (1001, "Unloading page");
@@ -27,10 +28,22 @@ window.onbeforeunload = function() {
     return null;
 }
 
+function getSize () {
+    return {
+        height: window.innerHeight,
+        width: window.innerWidth
+    };
+}
+
+// Main entrypoint
 function ooui (rootElementPath) {
     var opened = false;
 
-    socket = new WebSocket ("ws://" + document.location.host + rootElementPath, "ooui");
+    var initialSize = getSize ();
+    var wsArgs = (rootElementPath.indexOf("?") >= 0 ? "&" : "?") +
+        "w=" + initialSize.width + "&h=" + initialSize.height;
+
+    socket = new WebSocket ("ws://" + document.location.host + rootElementPath + wsArgs, "ooui");
 
     socket.addEventListener ("open", function (event) {
         console.log ("Web socket opened");
@@ -44,7 +57,8 @@ function ooui (rootElementPath) {
     socket.addEventListener ("close", function (event) {
         console.error ("Web socket close", event);
         if (opened) {
-            location.reload ();
+            alert ("Connection to the server has been lost. Please try refreshing the page.");
+            opened = false;
         }
     });
 
@@ -52,15 +66,51 @@ function ooui (rootElementPath) {
         const messages = JSON.parse (event.data);
         if (debug) console.log("Messages", messages);
         if (Array.isArray (messages)) {
+            const jqs = []
             messages.forEach (function (m) {
                 // console.log('Raw value from server', m.v);
                 m.v = fixupValue (m.v);
-                processMessage (m);
+                if (m.k.startsWith ("$.")) {
+                    jqs.push (m);
+                }
+                else {
+                    processMessage (m);
+                }
             });
+            // Run jQuery functions last since they usually require a fully built DOM
+            jqs.forEach (processMessage);
         }
     });
 
     console.log("Web socket created");
+
+    // Throttled window resize event
+    (function() {
+        window.addEventListener("resize", resizeThrottler, false);
+
+        var resizeTimeout;
+        function resizeThrottler() {
+            if (!resizeTimeout) {
+                resizeTimeout = setTimeout(function() {
+                    resizeTimeout = null;
+                    resizeHandler();            
+                }, 100);
+            }
+        }
+
+        function resizeHandler() {
+            const em = {
+                m: "event",
+                id: "window",
+                k: "resize",
+                v: getSize (),
+            };
+            const ems = JSON.stringify (em);
+            if (socket != null)
+                socket.send (ems);
+            if (debug) console.log ("Event", em);
+        }    
+    }());
 }
 
 function getNode (id) {
@@ -104,6 +154,17 @@ function msgSet (m) {
     if (debug) console.log ("Set", node, parts, value);
 }
 
+function msgSetAttr (m) {
+    const id = m.id;
+    const node = getNode (id);
+    if (!node) {
+        console.error ("Unknown node id", m);
+        return;
+    }
+    node.setAttribute(m.k, m.v);
+    if (debug) console.log ("SetAttr", node, m.k, m.v);
+}
+
 function msgCall (m) {
     const id = m.id;
     const node = getNode (id);
@@ -111,9 +172,11 @@ function msgCall (m) {
         console.error ("Unknown node id", m);
         return;
     }
-    const f = node[m.k];
+    const isJQuery = m.k.startsWith ("$.");
+    const target = isJQuery ? $(node) : node;
+    const f = isJQuery ? target[m.k.slice(2)] : target[m.k];
     if (debug) console.log ("Call", node, f, m.v);
-    const r = f.apply (node, m.v);
+    const r = f.apply (target, m.v);
     if (typeof m.rid === 'string' || m.rid instanceof String) {
         nodes[m.rid] = r;
     }
@@ -161,6 +224,9 @@ function processMessage (m) {
             break;
         case "set":
             msgSet (m);
+            break;
+        case "setAttr":
+            msgSetAttr (m);
             break;
         case "call":
             msgCall (m);

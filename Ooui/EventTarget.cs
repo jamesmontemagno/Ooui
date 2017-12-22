@@ -115,7 +115,7 @@ namespace Ooui
             MessageSent?.Invoke (message);
         }
 
-        protected void SendCall (string methodName, params object[] args)
+        public void Call (string methodName, params object[] args)
         {
             Send (Message.Call (Id, methodName, args));
         }
@@ -160,6 +160,12 @@ namespace Ooui
                 case MessageType.Set:
                     UpdateStateMessages (state => {
                         state.RemoveAll (x => x.MessageType == MessageType.Set && x.Key == message.Key);
+                        state.Add (message);
+                    });
+                    break;
+                case MessageType.SetAttribute:
+                    UpdateStateMessages (state => {
+                        state.RemoveAll (x => x.MessageType == MessageType.SetAttribute && x.Key == message.Key);
                         state.Add (message);
                     });
                     break;
